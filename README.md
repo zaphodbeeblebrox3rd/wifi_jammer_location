@@ -1,0 +1,84 @@
+# WiFi Jammer / Deauth Monitor
+
+Detect WiFi jamming and deauth activity using a distributed team of nodes and a central relay. Designed for monitoring deauth attacks and RF jamming (e.g. around Ring cameras and car theft).
+
+## Overview
+
+- **Single purpose**: RF interference, jamming, and deauth detection only. No RTT, jitter, speed, weather, modem, or router monitoring.
+- **Continuous monitoring**: Back-to-back capture cycles (no collection interval). Each cycle runs a capture for `monitor_capture_seconds`, stores or pushes, then immediately starts the next.
+- **Distributed**: One relay (central server with dashboard and optional local WiFi collection) and any number of nodes (clients that collect WiFi and push to relay).
+- **API key auth**: Nodes use a shared API key to POST measurements to the relay and GET config from the relay.
+- **Dashboard**: Line graph of RF/jamming metrics, jamming-event timeline, and a map of node locations.
+
+## Features
+
+- **Local WiFi collector**: Continuous listening: deauth/disassoc frame counts, signal/noise (dBm), RF jamming inference (high noise or low SNR). Each capture runs for `monitor_capture_seconds`; cycles run back-to-back. Requires WiFi interface in monitor mode and root or CAP_NET_RAW. Uses tshark or scapy.
+- **Event detection**: Deauth burst, disassoc burst, and RF jamming events from configurable thresholds.
+- **Relay**: Runs dashboard, stores measurements (with node_id), serves POST /api/measurements and GET /api/config. Can also run local WiFi collection if hardware allows.
+- **Nodes**: Run only the WiFi collector and push to relay; config can come from relay (GET /api/config).
+
+## Quick Start
+
+### Relay (central server)
+
+1. Install dependencies: `pip install -r requirements.txt`
+2. Copy config: `cp config/config.yaml.example config/config.yaml`
+3. Set `role: relay`, enable `devices.local_wifi` if this machine has a WiFi adapter in monitor mode, set `relay.api_key` (shared secret for nodes).
+4. Run: `python main.py` or install as service: `sudo ./scripts/setup-monitoring.sh [wifi_interface]`
+5. Dashboard: http://localhost:8050 (or the host/port in config).
+
+### Node (client)
+
+1. Same install and config copy.
+2. Set `role: node`, `relay.url` (e.g. http://192.168.1.100:8050), `relay.api_key` (same as relay), `node.name` and `node.location.latitude` / `longitude` (for map).
+3. Enable `devices.local_wifi`.
+4. Run: `python main.py` (no dashboard; pushes to relay). Optionally run as service.
+
+### API (for nodes)
+
+- **POST /api/measurements**  
+  Body: JSON with `timestamp`, `deauth_count`, `disassoc_count`, `local_wifi_signal_dbm`, `local_wifi_noise_dbm`, `rf_jam_detected`, etc.  
+  Header: `X-API-Key: <api_key>`  
+  Relay creates/updates node by API key and stores measurement with node_id.
+
+- **GET /api/config**  
+  Header: `X-API-Key: <api_key>`  
+  Returns `devices.local_wifi` and `event_detection` for nodes to use.
+
+## Dashboard
+
+- **Jamming Events** (left): Timeline of deauth_burst, rf_jamming, disassoc_burst. Click "Show Inferences" for causes.
+- **Line graph**: RF/jamming metrics only (deauth count, disassoc count, signal, noise, rf_jam_detected). No metric checkboxes.
+- **Node Map**: OpenStreetMap embed zoomed to nodes that have latitude/longitude. Nodes appear after they POST with name/lat/lon.
+
+## Configuration
+
+See `config/config.yaml.example`. Main options:
+
+- `role`: `relay` or `node`
+- `relay.url`, `relay.api_key`: For nodes (and for relay to validate keys).
+- `node.name`, `node.location.latitude`, `node.location.longitude`: For map when role is node.
+- `devices.local_wifi`: Interface, SSID/channel, capture duration, jamming thresholds.
+- `event_detection.thresholds.deauth_count_threshold`: Above this count raises deauth_burst.
+
+## Service setup
+
+Run as root to install systemd service and optional WiFi monitor mode:
+
+```bash
+sudo ./scripts/setup-monitoring.sh          # relay + dashboard autostart
+sudo ./scripts/setup-monitoring.sh wlo1     # also set wlo1 to monitor mode
+```
+
+When you run `python main.py` as a normal user and the service is already running, it opens the dashboard and exits. Use `sudo systemctl start wjl` / `stop wjl` / `status wjl` to control the service.
+
+## Requirements
+
+- Python 3.8+
+- For WiFi collection: tshark (recommended) or scapy; root or CAP_NET_RAW; interface in monitor mode (script can configure this).
+
+## Docs
+
+- [docs/RELAY_NODE_SETUP.md](docs/RELAY_NODE_SETUP.md) – Relay and node setup, API key, config-from-relay.
+- [docs/STATS.md](docs/STATS.md) – RF/jamming metrics and event types.
+- [docs/DASHBOARD.md](docs/DASHBOARD.md) – Dashboard layout and usage.

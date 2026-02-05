@@ -1,0 +1,146 @@
+# Internet Weather Correlator Configuration
+
+# Database configuration
+database:
+  path: data/monitoring.db  # SQLite database path (relative to project root)
+
+# Units preference for weather data and visualization
+# Options: "metric" (Celsius, millimeters, m/s) or "us" (Fahrenheit, inches, mph)
+# Note: Both metric and US units are stored in the database, this setting
+# determines which units are preferred for display/visualization
+units: us  # Options: metric, us
+
+relay:
+  url: null
+  api_key: null
+
+node:
+  name: null
+  location:
+    latitude: 41.7250   # Your latitude (required)
+    longitude: -87.5867  # Your longitude (required)
+  noaa:
+    # NOAA/Weather.gov is free and doesn't require an API key
+    # Just set your location above
+  space_weather:
+    enabled: true
+    provider: noaa_swpc  # NOAA Space Weather Prediction Center
+    # NOAA SWPC doesn't require an API key for basic data
+
+# Network monitoring configuration
+network:
+  # Ping targets to monitor
+  ping_targets:
+    - 1.1.1.1      # Cloudflare DNS
+    - 8.8.8.8      # Google DNS
+    # Add your ISP DNS and other targets here
+  
+  # TCP ports to test connectivity
+  tcp_ports:
+    - 80   # HTTP
+    - 443  # HTTPS
+    - 53   # DNS
+  
+  # DNS servers to test latency
+  dns_servers:
+    isp: Astound      # ISP DNS (auto-detect or set manually)
+    "1.1.1.1": "1.1.1.1"  # Cloudflare DNS
+    "8.8.8.8": "8.8.8.8"  # Google DNS
+    "ns1.dns.rcn.net": "207.172.3.8"
+    "ns2.dns.rcn.net": "207.172.3.9"
+  
+  # Ping settings
+  ping_count: 10      # Number of pings per test
+  ping_timeout: 1.0   # Timeout in seconds
+
+# Device monitoring configuration
+devices:
+  # Cable modem (Hitron CODA-57)
+  modem:
+    enabled: true
+    ip: 192.168.100.1
+    username: null  # If authentication required
+    password: null  # If authentication required
+  
+  # Router (eero)
+  router:
+    enabled: false
+    type: eero
+    ip: null        # Router IP address
+    api_key: null   # eero API key if available
+  
+  # UPS (APC BE600M1)
+  ups:
+    enabled: false
+    device: /dev/ttyUSB0  # USB device path (Linux) or COM port (Windows)
+
+  # Local Wi-Fi monitor (deauth frames and RF jamming inference)
+  # Requires interface in monitor mode (e.g. iw dev wlo1 set type monitor) and root or CAP_NET_RAW
+  # Monitor mode listens on one channel at a time. Set ssid to use that network's channel; or set channel as fallback.
+  local_wifi:
+    enabled: true
+    interface: wlo1
+    ssid: null                    # SSID to monitor (interface is set to that network's channel). Preferred over channel.
+    channel: null                 # Fallback channel (1-14 for 2.4 GHz, 36+ for 5 GHz). Used when ssid unset or scan fails.
+    monitor_capture_seconds: 30   # Duration of each capture; cycles run back-to-back (continuous)
+    deauth_threshold: 5          # Count above which deauth_burst event is raised
+    jamming_noise_threshold_dbm: -70   # Noise (dBm) above which rf_jamming is flagged
+    jamming_snr_threshold_db: 10       # Min SNR (signal - noise dB) below which rf_jamming is flagged
+
+# Dashboard configuration
+dashboard:
+  host: 127.0.0.1  # Network interface to bind dashboard server (127.0.0.1 = localhost only, 0.0.0.0 = all interfaces)
+  port: 8050        # Port for dashboard server
+  debug: false      # Enable debug mode (development only)
+  # Correlation analysis settings
+  correlation:
+    default_method: pearson  # Default correlation method: "pearson" (linear) or "spearman" (rank-based)
+    # Per-metric method overrides (for quantized/discrete data that needs Spearman)
+    method_overrides:
+      # Weather metrics that come in discrete increments from NOAA (1°C = 1.8°F steps)
+      temperature_f: spearman
+      temperature_c: spearman
+      dewpoint_f: spearman
+      dewpoint_c: spearman
+      # Packet loss is quantized in 10% increments (0%, 10%, 20%, etc.) due to 10 pings per test
+      loss_pct: spearman
+      # Add other quantized metrics here as needed
+      # Continuous metrics (rtt_ms, jitter_ms, etc.) will use default_method (pearson)
+  # Threshold analysis settings
+  threshold_analysis:
+    enabled: true  # Enable threshold-based analysis (bucketing weather values and comparing network performance)
+    # Useful for detecting threshold effects and non-linear relationships that correlation might miss
+
+# ISP status page monitoring
+isp_status:
+  enabled: false  # Enable to collect ISP outage/maintenance data
+  provider: downdetector  # Options: astound, downdetector, generic
+  url: https://downdetector.com/status/astound/  # Downdetector URL for your ISP/service
+  check_interval: 300  # Check every 5 minutes (same as collection interval)
+
+# Event tracking configuration (for major patches, OS releases, infrastructure, etc.)
+# When an event is active, event_name and the type flag are stored with each measurement
+# so you can compare "before" vs "after" or filter by event in the dashboard.
+event_tracking:
+  enabled: true
+  events:
+    # Example: ISP tap replacement (use type "patch" for infrastructure work)
+    # Set start/end to the date/time window when the work is done (UTC).
+    # - name: "Tap replaced at drop"
+    #   type: patch
+    #   start: "2026-01-30T14:00:00Z"   # When the tech is scheduled (UTC)
+    #   end:   "2026-01-30T18:00:00Z"   # End of window (UTC)
+    #
+    # Other types: os_release (OS releases), televised (big streaming/sports events)
+
+# Event detection configuration
+event_detection:
+  thresholds:
+    packet_loss_pct: 5.0      # Packet loss percentage threshold
+    latency_spike_ms: 100.0   # Latency spike threshold (ms above baseline)
+    dns_latency_ms: 500.0     # DNS latency threshold (ms)
+    deauth_count_threshold: 5 # Deauth frames per capture window above which deauth_burst event is raised
+  anomaly:
+    enabled: true             # Enable statistical anomaly detection
+    z_score_threshold: 2.5    # Z-score threshold for anomalies
+    baseline_window_hours: 24 # Hours of data for baseline calculation
