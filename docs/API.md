@@ -43,7 +43,7 @@ Return config for nodes (local_wifi, event_detection).
 
 The dashboard uses `DashboardAPI` and `DataService` for time series, events, inferences, and nodes. These are used by the Dash app, not exposed as HTTP except via the relay API above.
 
-### DashboardAPI (src/iwc/dashboard/api.py)
+### DashboardAPI (src/wjl/dashboard/api.py)
 
 - **get_time_series_data(start_time, end_time, metrics=None)** – Returns `{timestamps: [...], data: {metric: [values]}}` for RF metrics only.
 - **get_events(start_time, end_time)** – Returns list of jamming events (deauth_burst, rf_jamming, disassoc_burst).
@@ -52,7 +52,7 @@ The dashboard uses `DashboardAPI` and `DataService` for time series, events, inf
 - **get_data_range()** – Returns `{min_timestamp, max_timestamp}` from database.
 - **get_nodes()** – Returns list of nodes for map: `{id, name, latitude, longitude, last_seen}`.
 
-### DataService (src/iwc/dashboard/data_service.py)
+### DataService (src/wjl/dashboard/data_service.py)
 
 - **get_time_series_data(start_time, end_time, metrics=None)** – DataFrame with timestamp and RF columns.
 - **get_available_metrics()** – List of metric dicts (name, display_name, category, unit).

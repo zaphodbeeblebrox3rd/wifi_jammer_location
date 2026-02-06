@@ -691,7 +691,11 @@ class DashboardApp:
         def update_map(refresh_trigger):
             """Show map zoomed to node locations, or default 0.05 mile radius when no nodes."""
             nodes = self.api.get_nodes()
-            with_coords = [n for n in nodes if n.get("latitude") is not None and n.get("longitude") is not None]
+            with_coords = [
+                n for n in nodes
+                if n.get("latitude") is not None and n.get("longitude") is not None
+                and not callable(n.get("latitude")) and not callable(n.get("longitude"))
+            ]
             if with_coords:
                 lats = [float(n["latitude"]) for n in with_coords]
                 lons = [float(n["longitude"]) for n in with_coords]
@@ -705,9 +709,11 @@ class DashboardApp:
                     style={"marginTop": "8px", "fontSize": "12px", "color": "#555"},
                 )
             else:
-                # Default: 0.05 mile radius around a center (relay-only or no nodes yet)
+                # Default: 0.05 mile radius around config node or fallback center (relay-only or no nodes yet)
                 radius_miles = 0.05
-                center_lat, center_lon = 41.0, -87.0
+                _lat, _lon = self.config.node_latitude(), self.config.node_longitude()
+                center_lat = _lat if _lat is not None else 41.0
+                center_lon = _lon if _lon is not None else -87.0
                 radius_deg_lat = radius_miles / 69.0
                 radius_deg_lon = radius_miles / (69.0 * math.cos(math.radians(center_lat)))
                 min_lat = center_lat - radius_deg_lat
@@ -716,7 +722,7 @@ class DashboardApp:
                 max_lon = center_lon + radius_deg_lon
                 bbox = f"{min_lon},{min_lat},{max_lon},{max_lat}"
                 caption = html.Div(
-                    "No nodes with location yet. Map shows default 0.05 mile radius. Nodes appear after they POST with name/lat/lon.",
+                    "No nodes with location yet. Map shows default 0.05 mile radius. Set node.location in config or have nodes POST with name/lat/lon.",
                     style={"marginTop": "8px", "fontSize": "12px", "color": "#666"},
                 )
             osm_url = f"https://www.openstreetmap.org/export/embed.html?bbox={bbox}&layer=mapnik&marker={center_lat}%2C{center_lon}"
@@ -742,7 +748,7 @@ class DashboardApp:
                 return {"display": "none"}
             return {"display": "block"}
 
-    def run(self, host: str = "127.0.0.1", port: int = 8050, debug: bool = False):
+    def run(self, host: str = "127.0.0.1", port: int = 8051, debug: bool = False):
         """Run the dashboard server."""
         logger.info(f"Starting dashboard server on {host}:{port}")
         # Disable reloader when running in threads (it doesn't work in threads)

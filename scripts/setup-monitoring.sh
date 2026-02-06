@@ -135,7 +135,7 @@ if [ -n "$REAL_USER" ]; then
 Type=Application
 Name=WiFi Jammer Monitor Dashboard
 Comment=Open the WiFi Jammer / Deauth Monitor dashboard at login
-Exec=xdg-open http://localhost:8050
+Exec=xdg-open http://localhost:8051
 X-GNOME-Autostart-enabled=true
 DESKTOP
     chown "$REAL_USER:$REAL_USER" "$DESKTOP_FILE"
@@ -155,7 +155,7 @@ echo "Setup complete."
 echo "  Service:  sudo systemctl start wjl   (already started)"
 echo "            sudo systemctl stop wjl"
 echo "            sudo systemctl status wjl"
-echo "  Dashboard: http://localhost:8050 (opens at next login for $REAL_USER, or open manually)"
+echo "  Dashboard: http://localhost:8051 (opens at next login for $REAL_USER, or open manually)"
 if [ -n "$WIFI_IFACE" ]; then
   echo "  Wi-Fi monitor: $WIFI_IFACE (wifi-monitor.service enabled)"
 fi

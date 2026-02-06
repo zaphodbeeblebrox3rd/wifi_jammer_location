@@ -6,12 +6,12 @@ The WiFi Jammer / Deauth Monitor runs as either a **relay** (central server) or 
 
 - One relay per team. It holds the SQLite database, serves the dashboard, and (optionally) runs local WiFi collection.
 - Set `role: relay` in config. Set `relay.api_key` to a shared secret; nodes must use this key in `X-API-Key` when POSTing measurements and GETting config.
-- Bind dashboard where nodes can reach it (e.g. `dashboard.host: 0.0.0.0` and `dashboard.port: 8050`). Nodes will use `relay.url` (e.g. `http://<relay-ip>:8050`).
+- Bind dashboard where nodes can reach it (e.g. `dashboard.host: 0.0.0.0` and `dashboard.port: 8051`). Nodes will use `relay.url` (e.g. `http://<relay-ip>:8051`).
 
 ## Node
 
 - Each node runs only the local WiFi collector and pushes measurements to the relay. It does not run a dashboard.
-- Set `role: node`, `relay.url` (e.g. `http://192.168.1.100:8050`), and `relay.api_key` (same as relay). Set `node.name` and `node.location.latitude` / `longitude` so the relay map shows this node.
+- Set `role: node`, `relay.url` (e.g. `http://192.168.1.100:8051`), and `relay.api_key` (same as relay). Set `node.name` and `node.location.latitude` / `longitude` so the relay map shows this node.
 - Enable `devices.local_wifi` and (on Linux) put the WiFi interface in monitor mode (e.g. `sudo ./scripts/setup-monitoring.sh wlo1`).
 
 ## API Key
