@@ -25,12 +25,12 @@ Detect WiFi jamming and deauth activity using a distributed team of nodes and a 
 2. Copy config: `cp config/config.yaml.example config/config.yaml`
 3. Set `role: relay`, enable `devices.local_wifi` if this machine has a WiFi adapter in monitor mode, set `relay.api_key` (shared secret for nodes).
 4. Run: `python main.py` or install as service: `sudo ./scripts/setup-monitoring.sh [wifi_interface]`
-5. Dashboard: http://localhost:8050 (or the host/port in config).
+5. Dashboard: http://localhost:8051 (or the host/port in config).
 
 ### Node (client)
 
 1. Same install and config copy.
-2. Set `role: node`, `relay.url` (e.g. http://192.168.1.100:8050), `relay.api_key` (same as relay), `node.name` and `node.location.latitude` / `longitude` (for map).
+2. Set `role: node`, `relay.url` (e.g. http://192.168.1.100:8051), `relay.api_key` (same as relay), `node.name` and `node.location.latitude` / `longitude` (for map).
 3. Enable `devices.local_wifi`.
 4. Run: `python main.py` (no dashboard; pushes to relay). Optionally run as service.
 

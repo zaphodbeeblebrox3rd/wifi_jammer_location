@@ -9,9 +9,9 @@ from pathlib import Path
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from iwc.config import Config
-from iwc.database import Database
-from iwc.dashboard.app import DashboardApp
+from wjl.config import Config
+from wjl.database import Database
+from wjl.dashboard.app import DashboardApp
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -76,7 +76,7 @@ def main():
         # Get dashboard config
         dashboard_config = config.get("dashboard", {})
         host = args.host or dashboard_config.get("host", "127.0.0.1")  # Default to localhost
-        port = args.port or dashboard_config.get("port", 8050)
+        port = args.port or dashboard_config.get("port", 8051)
         debug = args.debug or dashboard_config.get("debug", False)
 
         # Create and run dashboard

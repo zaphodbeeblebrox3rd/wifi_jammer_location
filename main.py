@@ -19,10 +19,10 @@ WJL_SERVICE_NAME = "wjl"
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-from iwc.config import Config
-from iwc.database import Database
-from iwc.scheduler import MonitoringScheduler
-from iwc.dashboard.app import DashboardApp
+from wjl.config import Config
+from wjl.database import Database
+from wjl.scheduler import MonitoringScheduler
+from wjl.dashboard.app import DashboardApp
 
 # ANSI red for prominent warnings (only if stderr is a TTY)
 RED = "\033[91m"
@@ -96,7 +96,7 @@ def main():
         if not args.once and not args.no_dashboard and not is_root:
             dashboard_config = config.get("dashboard", {})
             dash_host = dashboard_config.get("host", "127.0.0.1")
-            dash_port = dashboard_config.get("port", 8050)
+            dash_port = dashboard_config.get("port", 8051)
             browser_host = "localhost" if dash_host == "127.0.0.1" else dash_host
             dashboard_url = f"http://{browser_host}:{dash_port}"
 
@@ -168,7 +168,7 @@ def main():
         if not args.no_dashboard:
             dashboard_config = config.get("dashboard", {})
             host = dashboard_config.get("host", "127.0.0.1")  # Default to localhost
-            port = dashboard_config.get("port", 8050)
+            port = dashboard_config.get("port", 8051)
             debug = dashboard_config.get("debug", False)
 
             logger.info("Initializing dashboard...")

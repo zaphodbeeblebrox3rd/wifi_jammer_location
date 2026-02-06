@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "internet-weather-correlator"
+name = "wifi-jammer-location"
 version = "0.1.0"
-description = "Monitor internet service quality and correlate issues with weather and other factors"
+description = "WiFi jammer / deauth monitor: relay, nodes, and dashboard for RF and deauth events"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
@@ -31,7 +31,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["iwc"]
+packages = ["wjl"]
 
 [tool.setuptools.package-dir]
 "" = "src"

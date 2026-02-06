@@ -131,5 +131,13 @@ class DataService:
         return stats
 
     def get_nodes_for_map(self) -> List[Dict]:
-        """Get nodes with id, name, latitude, longitude for dashboard map."""
-        return self.database.get_nodes_for_map()
+        """Get nodes with id, name, latitude, longitude for dashboard map.
+        Includes DB nodes plus the relay's own node from config (node.name / node.location) when set.
+        """
+        nodes = self.database.get_nodes_for_map()
+        lat = self.config.node_latitude()
+        lon = self.config.node_longitude()
+        if lat is not None and lon is not None:
+            name = self.config.node_name() or "Relay"
+            nodes = [{"id": "relay", "name": name, "latitude": lat, "longitude": lon, "last_seen": None}] + nodes
+        return nodes
