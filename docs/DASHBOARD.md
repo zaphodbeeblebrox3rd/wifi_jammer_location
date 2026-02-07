@@ -7,10 +7,10 @@ The WiFi Jammer / Deauth Monitor Dashboard is a web-based view for RF/jamming me
 ## Starting the Dashboard
 
 ```bash
-python dashboard.py
+uv run python dashboard.py
 ```
 
-Or run the full app (relay with collection): `python main.py`. Dashboard defaults to http://localhost:8051 (configurable in `config.yaml`).
+Or run the full app (relay with collection): `uv run python main.py`. Dashboard defaults to http://localhost:8051 (configurable in `config.yaml`).
 
 ### Command line options (dashboard.py)
 

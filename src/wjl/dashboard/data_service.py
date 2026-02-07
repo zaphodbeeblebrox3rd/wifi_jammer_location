@@ -1,6 +1,8 @@
 """Data service for querying WiFi jamming monitoring data."""
 
 import logging
+import math
+from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -129,6 +131,52 @@ class DataService:
                     except (TypeError, ValueError):
                         pass
         return stats
+
+    @staticmethod
+    def _combined_amplitude_dbm(signal_dbm: Optional[float], noise_dbm: Optional[float]) -> Optional[float]:
+        """Total power in dBm: 10*log10(10^(s/10)+10^(n/10)). Returns None if both missing."""
+        if signal_dbm is not None and noise_dbm is not None:
+            try:
+                linear_s = 10 ** (signal_dbm / 10.0)
+                linear_n = 10 ** (noise_dbm / 10.0)
+                return round(10 * math.log10(linear_s + linear_n), 2)
+            except (ValueError, ZeroDivisionError):
+                return signal_dbm
+        return signal_dbm if signal_dbm is not None else noise_dbm
+
+    def get_channel_amplitude_time_series(
+        self, start_time: datetime, end_time: datetime
+    ) -> Dict:
+        """
+        Get per-channel combined amplitude (signal+noise as total power dBm) at 5-min scan times.
+        Returns { "timestamps": [...], "data": { "ch1": [...], "ch2": [...], ... } } for Plotly.
+        """
+        if self.database.conn is None:
+            return {"timestamps": [], "data": {}}
+        rows = self.database.get_channel_amplitude(
+            start_time.isoformat(), end_time.isoformat()
+        )
+        if not rows:
+            return {"timestamps": [], "data": {}}
+        # Group by timestamp; each timestamp has one value per channel (prefer non-null when multiple rows)
+        by_ts: Dict[str, Dict[int, Optional[float]]] = defaultdict(dict)
+        for r in rows:
+            ts = r["timestamp"] if isinstance(r["timestamp"], str) else r["timestamp"]
+            if hasattr(ts, "isoformat"):
+                ts = ts.isoformat()
+            ch = int(r["channel"])
+            comb = self._combined_amplitude_dbm(r.get("signal_dbm"), r.get("noise_dbm"))
+            # Prefer non-null: don't overwrite existing value with None (e.g. relay + node rows)
+            existing = by_ts[ts].get(ch)
+            if existing is not None and comb is None:
+                continue
+            by_ts[ts][ch] = comb
+        timestamps = sorted(by_ts.keys())
+        channels = sorted(set(ch for d in by_ts.values() for ch in d))
+        data = {}
+        for ch in channels:
+            data[f"ch{ch}"] = [by_ts[ts].get(ch) for ts in timestamps]
+        return {"timestamps": timestamps, "data": data}
 
     def get_nodes_for_map(self) -> List[Dict]:
         """Get nodes with id, name, latitude, longitude for dashboard map.

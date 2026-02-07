@@ -189,6 +189,83 @@ class LocalWiFiCollector(BaseCollector):
             logger.debug("Neither tshark nor scapy available for deauth counting")
             return None, None, None, None
 
+    def _capture_signal_noise_duration(
+        self, duration_sec: int
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Capture on current channel for duration_sec and return (signal_dbm, noise_dbm) from radiotap. Requires tshark."""
+        if not shutil.which("tshark"):
+            return None, None
+        duration = max(1, min(duration_sec, 60))
+        try:
+            cmd = [
+                "tshark",
+                "-i", self.interface,
+                "-Y", "wlan",
+                "-a", f"duration:{duration}",
+                "-q",
+                "-T", "fields",
+                "-e", "radiotap.dbm_antsignal",
+                "-e", "radiotap.dbm_antnoise",
+            ]
+            out = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=duration + 10,
+            )
+            signal_values: List[float] = []
+            noise_values: List[float] = []
+            if out.returncode == 0 and out.stdout:
+                for line in out.stdout.strip().splitlines():
+                    parts = line.split("\t")
+                    if len(parts) >= 1 and parts[0].strip():
+                        try:
+                            sig_str = parts[0].strip()
+                            if "," in sig_str:
+                                sigs = [float(x.strip()) for x in sig_str.split(",") if x.strip()]
+                                if sigs:
+                                    signal_values.append(sum(sigs) / len(sigs))
+                            else:
+                                signal_values.append(float(sig_str))
+                        except ValueError:
+                            pass
+                    if len(parts) >= 2 and parts[1].strip():
+                        try:
+                            noise_str = parts[1].strip()
+                            if "," in noise_str:
+                                noises = [float(x.strip()) for x in noise_str.split(",") if x.strip()]
+                                if noises:
+                                    noise_values.append(sum(noises) / len(noises))
+                            else:
+                                noise_values.append(float(noise_str))
+                        except ValueError:
+                            pass
+            sig = round(sum(signal_values) / len(signal_values), 2) if signal_values else None
+            noise = round(sum(noise_values) / len(noise_values), 2) if noise_values else None
+            return sig, noise
+        except subprocess.TimeoutExpired:
+            return None, None
+        except (OSError, PermissionError):
+            raise
+
+    def collect_per_channel(
+        self, channels: List[int], duration_sec_per_channel: int
+    ) -> List[Dict]:
+        """
+        Hop through channels, capture signal/noise on each. Returns list of
+        {channel, signal_dbm, noise_dbm}. Caller sets interface to monitor mode.
+        """
+        result: List[Dict] = []
+        for ch in channels:
+            self._set_channel(ch)
+            sig, noise = self._capture_signal_noise_duration(duration_sec_per_channel)
+            result.append({
+                "channel": ch,
+                "signal_dbm": sig,
+                "noise_dbm": noise,
+            })
+        return result
+
     def _count_deauth_tshark(self) -> Tuple[Optional[int], Optional[int], Optional[float], Optional[float]]:
         """Use tshark to count deauth/disassoc and extract radiotap signal/noise (dBm) from captured frames."""
         duration = max(1, min(self.monitor_capture_seconds, 120))

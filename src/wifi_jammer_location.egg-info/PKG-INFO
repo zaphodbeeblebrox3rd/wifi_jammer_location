@@ -1,3 +1,36 @@
+Metadata-Version: 2.4
+Name: wifi-jammer-location
+Version: 0.1.0
+Summary: WiFi jammer / deauth monitor: relay, nodes, and dashboard for RF and deauth events
+Author: Eric Hoy
+License: MIT
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: System Administrators
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests>=2.31.0
+Requires-Dist: pythonping>=1.1.4
+Requires-Dist: dnspython>=2.4.2
+Requires-Dist: pyyaml>=6.0.1
+Requires-Dist: pyserial>=3.5
+Requires-Dist: beautifulsoup4>=4.12.2
+Requires-Dist: lxml>=4.9.3
+Requires-Dist: dash>=2.14.0
+Requires-Dist: plotly>=5.17.0
+Requires-Dist: pandas>=2.0.0
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: scipy>=1.12.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: black>=23.7.0; extra == "dev"
+Requires-Dist: ruff>=0.0.287; extra == "dev"
+Dynamic: license-file
+
 # WiFi Jammer / Deauth Monitor
 
 Detect WiFi jamming and deauth activity using a distributed team of nodes and a central relay. Designed for monitoring deauth attacks and RF jamming (e.g. around Ring cameras and car theft).

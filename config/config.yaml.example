@@ -33,6 +33,12 @@ devices:
     deauth_threshold: 5
     jamming_noise_threshold_dbm: -70
     jamming_snr_threshold_db: 10
+    # Optional: per-channel amplitude scan every 5 min for "Channel amplitude" dashboard graph
+    channel_scan:
+      enabled: false
+      interval_minutes: 5
+      channels: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]   # 2.4 GHz
+      capture_seconds_per_channel: 10
 
 # Dashboard (relay binds here; nodes do not need to run dashboard)
 dashboard:

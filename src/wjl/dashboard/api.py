@@ -171,3 +171,14 @@ class DashboardAPI:
             List of node dictionaries for dashboard map
         """
         return self.data_service.get_nodes_for_map()
+
+    def get_channel_amplitude_time_series(
+        self, start_time: datetime, end_time: datetime
+    ) -> Dict:
+        """
+        Get per-channel combined amplitude (5-min scan) for dashboard graph.
+
+        Returns:
+            {"timestamps": [...], "data": {"ch1": [...], "ch2": [...], ...}}
+        """
+        return self.data_service.get_channel_amplitude_time_series(start_time, end_time)

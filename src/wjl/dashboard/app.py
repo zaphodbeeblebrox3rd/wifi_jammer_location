@@ -173,6 +173,23 @@ class DashboardApp:
                     ],
                     style={"clear": "both", "display": "flex"},
                 ),
+                # Channel amplitude graph (5-min scan, one line per channel)
+                html.Div(
+                    [
+                        html.H3("Channel amplitude (5 min)", style={"marginTop": "20px", "marginBottom": "10px"}),
+                        html.P(
+                            "Combined signal+noise (dBm) per channel. Enable devices.local_wifi.channel_scan in config.",
+                            style={"fontSize": "12px", "color": "#666", "marginBottom": "10px"},
+                        ),
+                        dcc.Graph(id="channel-amplitude-graph", style={"height": "400px"}),
+                    ],
+                    style={
+                        "padding": "20px",
+                        "backgroundColor": "#fafafa",
+                        "borderTop": "1px solid #ddd",
+                        "clear": "both",
+                    },
+                ),
                 # Map pane (nodes)
                 html.Div(
                     [
@@ -528,6 +545,102 @@ class DashboardApp:
                 events_html.append(html.Div("No events detected in this time range"))
 
             return fig, html.Div(events_html)
+
+        @self.app.callback(
+            Output("channel-amplitude-graph", "figure"),
+            [
+                Input("time-range-store", "data"),
+                Input("refresh-trigger", "data"),
+            ],
+        )
+        def update_channel_amplitude_graph(time_range, refresh_trigger):
+            """Update channel amplitude graph (5-min scan, one line per channel)."""
+            fig = go.Figure()
+            if not time_range or not time_range.get("start") or not time_range.get("end"):
+                fig.add_annotation(
+                    text="Select a time range",
+                    xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(size=14),
+                )
+                fig.update_layout(height=400)
+                return fig
+            start_time_str = time_range["start"]
+            end_time_str = time_range["end"]
+            if isinstance(start_time_str, str):
+                start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=timezone.utc)
+            else:
+                start_time = start_time_str
+            if isinstance(end_time_str, str):
+                end_time = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
+                if end_time.tzinfo is None:
+                    end_time = end_time.replace(tzinfo=timezone.utc)
+            else:
+                end_time = end_time_str
+            data = self.api.get_channel_amplitude_time_series(start_time, end_time)
+            timestamps_raw = data.get("timestamps") or []
+            ch_data = data.get("data") or {}
+            if not timestamps_raw or not ch_data:
+                fig.add_annotation(
+                    text="No channel scan data. Enable devices.local_wifi.channel_scan in config, run as root (sudo), and wait for 5-min scans.",
+                    xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(size=12),
+                )
+                fig.update_layout(height=400)
+                return fig
+            timestamps = []
+            for ts_str in timestamps_raw:
+                if isinstance(ts_str, str):
+                    # Normalize: SQLite may return "YYYY-MM-DD HH:MM:SS" or ISO with T
+                    normalized = ts_str.replace(" ", "T", 1).replace("Z", "+00:00")
+                    try:
+                        ts = datetime.fromisoformat(normalized)
+                    except ValueError:
+                        continue
+                    if ts.tzinfo is None:
+                        ts = ts.replace(tzinfo=timezone.utc)
+                else:
+                    ts = ts_str
+                timestamps.append(ts.astimezone())
+            traces_added = 0
+            for ch_key in sorted(ch_data.keys(), key=lambda x: int(x[2:]) if x.startswith("ch") and x[2:].isdigit() else 0):
+                values = ch_data[ch_key]
+                valid_xy = []
+                for i, v in enumerate(values):
+                    if v is None:
+                        continue
+                    if isinstance(v, float) and (pd.isna(v) or math.isinf(v)):
+                        continue
+                    try:
+                        y_val = float(v)
+                        if i < len(timestamps):
+                            valid_xy.append((timestamps[i], y_val))
+                    except (TypeError, ValueError):
+                        continue
+                if not valid_xy:
+                    continue
+                xs, ys = [p[0] for p in valid_xy], [p[1] for p in valid_xy]
+                fig.add_trace(
+                    go.Scatter(
+                        x=xs, y=ys,
+                        name=ch_key,
+                        mode="lines+markers",
+                        hovertemplate=f"<b>{ch_key}</b><br>Time: %{{x}}<br>Combined: %{{y:.2f}} dBm<extra></extra>",
+                    )
+                )
+                traces_added += 1
+            fig.update_layout(
+                xaxis=dict(title="Time"),
+                yaxis=dict(title="Combined amplitude (dBm)"),
+                hovermode="x unified",
+                height=400,
+                legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
+            )
+            if traces_added == 0:
+                fig.add_annotation(
+                    text="Channel scan ran but no signal/noise was captured. Run as root (sudo) with interface in monitor mode for amplitude data.",
+                    xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(size=12),
+                )
+            return fig
 
         @self.app.callback(
             Output("inference-modal", "children"),
