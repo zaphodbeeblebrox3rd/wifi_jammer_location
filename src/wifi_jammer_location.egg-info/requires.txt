@@ -10,3 +10,8 @@ plotly>=5.17.0
 pandas>=2.0.0
 numpy>=1.24.0
 scipy>=1.12.0
+
+[dev]
+pytest>=7.4.0
+black>=23.7.0
+ruff>=0.0.287

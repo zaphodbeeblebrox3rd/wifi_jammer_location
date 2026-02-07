@@ -77,6 +77,12 @@ class Config:
                     "deauth_threshold": 5,
                     "jamming_noise_threshold_dbm": -70,
                     "jamming_snr_threshold_db": 10,
+                    "channel_scan": {
+                        "enabled": False,
+                        "interval_minutes": 5,
+                        "channels": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                        "capture_seconds_per_channel": 10,
+                    },
                 },
             },
             "dashboard": {

@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from .config import Config
 from .database import Database
@@ -62,6 +62,7 @@ class MonitoringScheduler:
         self.database = database
         self.running = False
         self._monitor_thread = None
+        self._channel_scan_thread = None
         self._last_collection_time = None
         self.collectors = self._initialize_collectors()
 
@@ -122,6 +123,54 @@ class MonitoringScheduler:
         except Exception as e:
             logger.error(f"Error in collection cycle: {e}", exc_info=True)
 
+    def _get_channel_scan_config(self) -> Dict:
+        """Return channel_scan config dict if enabled; else empty."""
+        lw = self.config.get("devices.local_wifi", {}) or {}
+        scan = lw.get("channel_scan") or {}
+        if not scan.get("enabled", False):
+            return {}
+        return scan
+
+    def _run_channel_scan_loop(self) -> None:
+        """Run per-channel amplitude scan every interval_minutes (only when channel_scan enabled)."""
+        scan = self._get_channel_scan_config()
+        if not scan:
+            return
+        interval_sec = max(60, (scan.get("interval_minutes") or 5) * 60)
+        channels: List[int] = scan.get("channels") or [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        duration = max(1, min(scan.get("capture_seconds_per_channel") or 10, 30))
+        collector = self.collectors.get("local_wifi")
+        if not isinstance(collector, LocalWiFiCollector):
+            return
+        logger.info(
+            "Channel scan thread started: every %s min, channels %s, %s s per channel",
+            interval_sec // 60, channels, duration,
+        )
+        first_run = True
+        while self.running:
+            if not first_run:
+                time.sleep(interval_sec)
+            first_run = False
+            if not self.running:
+                break
+            if not self._get_channel_scan_config():
+                continue
+            try:
+                when = datetime.now(timezone.utc)
+                samples = collector.collect_per_channel(channels, duration)
+                node_id = None if self.config.is_relay() else getattr(self.config, "_node_id", None)
+                for s in samples:
+                    self.database.insert_channel_amplitude(
+                        when,
+                        node_id,
+                        s["channel"],
+                        s.get("signal_dbm"),
+                        s.get("noise_dbm"),
+                    )
+                logger.info("Channel scan completed: %s samples at %s", len(samples), when.isoformat())
+            except Exception as e:
+                logger.error("Channel scan failed: %s", e, exc_info=True)
+
     def start(self) -> None:
         """Start continuous monitoring (back-to-back capture cycles)."""
         if self.running:
@@ -131,12 +180,27 @@ class MonitoringScheduler:
         self._monitor_thread = threading.Thread(target=self._run_continuous, daemon=True)
         self._monitor_thread.start()
         logger.info("Continuous monitoring started (back-to-back capture cycles)")
+        scan = self._get_channel_scan_config()
+        if scan and "local_wifi" in self.collectors:
+            self._channel_scan_thread = threading.Thread(
+                target=self._run_channel_scan_loop, daemon=True
+            )
+            self._channel_scan_thread.start()
 
     def _run_continuous(self) -> None:
-        """Run capture cycles back-to-back with no delay between them."""
+        """Run capture cycles. When local_wifi is enabled, enforce minimum interval (monitor_capture_seconds) so we don't flood the DB when tshark fails fast."""
         while self.running:
             if self.collectors:
+                start = time.time()
                 self._run_collection_cycle()
+                elapsed = time.time() - start
+                # When local_wifi collector is active, cap cycle rate so we don't store thousands of empty rows if tshark fails immediately (e.g. not root)
+                if "local_wifi" in self.collectors:
+                    lw = self.config.get("devices.local_wifi", {}) or {}
+                    interval = max(1, lw.get("monitor_capture_seconds", 30))
+                    sleep_for = interval - elapsed
+                    if sleep_for > 0 and self.running:
+                        time.sleep(sleep_for)
             else:
                 time.sleep(5)
 
@@ -146,6 +210,8 @@ class MonitoringScheduler:
             return
         logger.info("Stopping monitor")
         self.running = False
+        if self._channel_scan_thread and self._channel_scan_thread.is_alive():
+            self._channel_scan_thread.join(timeout=130)
         if self._monitor_thread and self._monitor_thread.is_alive():
             self._monitor_thread.join(timeout=120)
         logger.info("Monitor stopped")

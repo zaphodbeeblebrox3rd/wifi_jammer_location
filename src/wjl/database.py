@@ -85,6 +85,22 @@ class Database:
             )
             """
         )
+        # Per-channel amplitude at 5-min intervals (signal/noise per channel)
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS channel_amplitude (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME NOT NULL,
+                node_id TEXT,
+                channel INTEGER NOT NULL,
+                signal_dbm REAL,
+                noise_dbm REAL
+            )
+            """
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_channel_amplitude_timestamp ON channel_amplitude(timestamp)"
+        )
         self.conn.commit()
         logger.info(f"Database initialized at {self.db_path}")
 
@@ -192,6 +208,44 @@ class Database:
         if row is None:
             return None
         return dict(row)
+
+    def insert_channel_amplitude(
+        self,
+        timestamp: datetime,
+        node_id: Optional[str],
+        channel: int,
+        signal_dbm: Optional[float],
+        noise_dbm: Optional[float],
+    ) -> None:
+        """Insert one channel-amplitude sample (5-min scan)."""
+        if self.conn is None:
+            raise RuntimeError("Database connection not initialized")
+        ts = timestamp.isoformat() if isinstance(timestamp, datetime) else timestamp
+        with self._lock:
+            self.conn.execute(
+                """INSERT INTO channel_amplitude (timestamp, node_id, channel, signal_dbm, noise_dbm)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (ts, node_id, channel, signal_dbm, noise_dbm),
+            )
+            self.conn.commit()
+
+    def get_channel_amplitude(
+        self, start_time: str, end_time: str
+    ) -> List[Dict[str, Any]]:
+        """Return channel_amplitude rows in time range for dashboard graph."""
+        if self.conn is None:
+            return []
+        with self._lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                """SELECT timestamp, channel, signal_dbm, noise_dbm
+                   FROM channel_amplitude
+                   WHERE timestamp >= ? AND timestamp <= ?
+                   ORDER BY timestamp ASC""",
+                (start_time, end_time),
+            )
+            rows = cursor.fetchall()
+        return [dict(r) for r in rows]
 
     def get_nodes_for_map(self) -> List[Dict[str, Any]]:
         """Return all nodes with id, name, latitude, longitude for dashboard map."""

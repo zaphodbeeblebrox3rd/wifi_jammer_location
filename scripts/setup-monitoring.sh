@@ -6,8 +6,9 @@
 # Example: sudo ./scripts/setup-monitoring.sh
 # Example: sudo ./scripts/setup-monitoring.sh wlo1
 #
-# With no argument: installs systemd service and dashboard autostart for the user who ran sudo.
-# With wifi_interface: also configures persistent Wi-Fi monitor mode for that interface (udev + systemd + NM unmanaged).
+# With no argument: installs systemd service and dashboard autostart; if config.yaml exists and
+# devices.local_wifi.interface is set, that interface is used for optional Wi-Fi monitor mode.
+# With wifi_interface: uses that interface for Wi-Fi monitor mode (overrides config).
 
 set -e
 
@@ -21,7 +22,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_PATH="$PROJECT_ROOT/config/config.yaml"
 WIFI_IFACE="${1:-}"
 
-# ---- Python autodetect ----
+# ---- Python autodetect (prefer project .venv from uv sync so service has deps when run as root) ----
 REAL_USER="${SUDO_USER:-}"
 if [ -x "$PROJECT_ROOT/.venv/bin/python" ]; then
   WJL_PYTHON="$PROJECT_ROOT/.venv/bin/python"
@@ -34,10 +35,43 @@ if [ -z "${WJL_PYTHON:-}" ] || [ ! -x "$WJL_PYTHON" ]; then
   WJL_PYTHON="/usr/bin/python3"
 fi
 if [ ! -x "$WJL_PYTHON" ]; then
-  echo "Could not find python3. Install Python 3.8+ and run this script again." >&2
+  echo "Could not find python3. Install Python 3.11+ (or use uv) and run this script again." >&2
   exit 1
 fi
+if [ ! -x "$PROJECT_ROOT/.venv/bin/python" ] && [ ! -x "$PROJECT_ROOT/venv/bin/python" ]; then
+  echo "Warning: No project .venv found. Run 'uv sync' (or 'uv venv && uv pip install -r requirements.txt') in the project root first so the service has dependencies." >&2
+fi
 echo "Using Python: $WJL_PYTHON"
+
+# Prefer invoking uv so the service uses the project env the same way as development (uv run).
+# uv may be in root's PATH or the invoking user's PATH; use full path so service (running as root) finds it.
+WJL_UV=""
+if command -v uv >/dev/null 2>&1; then
+  WJL_UV="$(command -v uv)"
+elif [ -n "$REAL_USER" ]; then
+  WJL_UV="$(su - "$REAL_USER" -c 'command -v uv' 2>/dev/null)" || true
+fi
+if [ -n "$WJL_UV" ]; then
+  echo "Using uv for service: $WJL_UV"
+fi
+
+# ---- Default Wi-Fi interface from config when not passed as argument ----
+if [ -z "$WIFI_IFACE" ] && [ -f "$CONFIG_PATH" ]; then
+  WIFI_IFACE="$("$WJL_PYTHON" -c "
+import yaml, sys
+try:
+    with open(sys.argv[1]) as f:
+        c = yaml.safe_load(f) or {}
+    i = (c.get('devices') or {}).get('local_wifi') or {}
+    if isinstance(i, dict):
+        print((i.get('interface') or '').strip() or '')
+    else:
+        print('')
+except Exception:
+    print('')
+" "$CONFIG_PATH")"
+  [ -n "$WIFI_IFACE" ] && echo "Using Wi-Fi interface from config (devices.local_wifi.interface): $WIFI_IFACE"
+fi
 
 # ---- Optional: Wi-Fi monitor mode ----
 if [ -n "$WIFI_IFACE" ]; then
@@ -100,8 +134,15 @@ UNMANAGED
   echo "Wi-Fi monitor mode configured for $WIFI_IFACE."
 fi
 
-# ---- WiFi Jammer Monitor systemd service ----
-echo "Creating systemd service wjl.service ..."
+# ---- WiFi Jammer Monitor systemd service (runs as root for WiFi capture permissions) ----
+# Service runs as root so it can use raw packet capture and monitor mode (CAP_NET_RAW, etc.).
+# ExecStart uses uv run when uv is available so the service uses the project env; otherwise .venv Python.
+echo "Creating systemd service wjl.service (runs as root for permissions) ..."
+if [ -n "$WJL_UV" ]; then
+  EXEC_START="$WJL_UV run python main.py -c $CONFIG_PATH --no-browser"
+else
+  EXEC_START="$WJL_PYTHON main.py -c $CONFIG_PATH --no-browser"
+fi
 cat > /etc/systemd/system/wjl.service << WJLEOF
 [Unit]
 Description=WiFi Jammer / Deauth Monitor - relay and dashboard
@@ -111,7 +152,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$PROJECT_ROOT
-ExecStart=$WJL_PYTHON main.py -c $CONFIG_PATH --no-browser
+ExecStart=$EXEC_START
 Restart=on-failure
 RestartSec=10
 
