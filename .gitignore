@@ -1,3 +1,6 @@
+data/monitoring.db
+data/monitoring.db-shm
+data/monitoring.db-wal
 config/config.yml
 config/config.yaml
 config/config.yaml.bak
