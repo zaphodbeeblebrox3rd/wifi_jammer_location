@@ -246,15 +246,20 @@ class MonitoringScheduler:
                 time.sleep(5)
 
     def stop(self) -> None:
-        """Stop continuous monitoring."""
+        """Stop continuous monitoring. Waits up to a few seconds for worker threads then returns."""
         if not self.running:
             return
         logger.info("Stopping monitor")
         self.running = False
+        join_sec = 5
         if self._channel_scan_thread and self._channel_scan_thread.is_alive():
-            self._channel_scan_thread.join(timeout=130)
+            self._channel_scan_thread.join(timeout=join_sec)
+            if self._channel_scan_thread.is_alive():
+                logger.debug("Channel scan thread did not finish within %ss (daemon will exit with process)", join_sec)
         if self._monitor_thread and self._monitor_thread.is_alive():
-            self._monitor_thread.join(timeout=120)
+            self._monitor_thread.join(timeout=join_sec)
+            if self._monitor_thread.is_alive():
+                logger.debug("Monitor thread did not finish within %ss (daemon will exit with process)", join_sec)
         logger.info("Monitor stopped")
 
     def run_once(self) -> None:

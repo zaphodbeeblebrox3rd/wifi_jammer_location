@@ -173,12 +173,18 @@ class DashboardAPI:
         return self.data_service.get_nodes_for_map()
 
     def get_channel_amplitude_time_series(
-        self, start_time: datetime, end_time: datetime
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        node_id: Optional[str] = None,
     ) -> Dict:
         """
         Get per-channel combined amplitude (5-min scan) for dashboard graph.
+        node_id: None = all; 'relay' = relay only; else that node's id.
 
         Returns:
             {"timestamps": [...], "data": {"ch1": [...], "ch2": [...], ...}}
         """
-        return self.data_service.get_channel_amplitude_time_series(start_time, end_time)
+        return self.data_service.get_channel_amplitude_time_series(
+            start_time, end_time, node_id=node_id
+        )

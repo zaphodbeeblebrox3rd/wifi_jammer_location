@@ -230,20 +230,42 @@ class Database:
             self.conn.commit()
 
     def get_channel_amplitude(
-        self, start_time: str, end_time: str
+        self,
+        start_time: str,
+        end_time: str,
+        node_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """Return channel_amplitude rows in time range for dashboard graph."""
+        """Return channel_amplitude rows in time range for dashboard graph.
+        node_id: None = all; 'relay' = relay only (node_id IS NULL); else filter by that node id.
+        """
         if self.conn is None:
             return []
         with self._lock:
             cursor = self.conn.cursor()
-            cursor.execute(
-                """SELECT timestamp, channel, signal_dbm, noise_dbm
-                   FROM channel_amplitude
-                   WHERE timestamp >= ? AND timestamp <= ?
-                   ORDER BY timestamp ASC""",
-                (start_time, end_time),
-            )
+            if node_id == "relay" or node_id == "":
+                cursor.execute(
+                    """SELECT timestamp, channel, signal_dbm, noise_dbm
+                       FROM channel_amplitude
+                       WHERE timestamp >= ? AND timestamp <= ? AND node_id IS NULL
+                       ORDER BY timestamp ASC""",
+                    (start_time, end_time),
+                )
+            elif node_id:
+                cursor.execute(
+                    """SELECT timestamp, channel, signal_dbm, noise_dbm
+                       FROM channel_amplitude
+                       WHERE timestamp >= ? AND timestamp <= ? AND node_id = ?
+                       ORDER BY timestamp ASC""",
+                    (start_time, end_time, node_id),
+                )
+            else:
+                cursor.execute(
+                    """SELECT timestamp, channel, signal_dbm, noise_dbm
+                       FROM channel_amplitude
+                       WHERE timestamp >= ? AND timestamp <= ?
+                       ORDER BY timestamp ASC""",
+                    (start_time, end_time),
+                )
             rows = cursor.fetchall()
         return [dict(r) for r in rows]
 

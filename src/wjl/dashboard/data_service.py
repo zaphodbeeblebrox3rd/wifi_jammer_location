@@ -145,16 +145,22 @@ class DataService:
         return signal_dbm if signal_dbm is not None else noise_dbm
 
     def get_channel_amplitude_time_series(
-        self, start_time: datetime, end_time: datetime
+        self,
+        start_time: datetime,
+        end_time: datetime,
+        node_id: Optional[str] = None,
     ) -> Dict:
         """
         Get per-channel combined amplitude (signal+noise as total power dBm) at 5-min scan times.
+        node_id: None = all; 'relay' = relay only; else that node's id.
         Returns { "timestamps": [...], "data": { "ch1": [...], "ch2": [...], ... } } for Plotly.
         """
         if self.database.conn is None:
             return {"timestamps": [], "data": {}}
         rows = self.database.get_channel_amplitude(
-            start_time.isoformat(), end_time.isoformat()
+            start_time.isoformat(),
+            end_time.isoformat(),
+            node_id=node_id,
         )
         if not rows:
             return {"timestamps": [], "data": {}}

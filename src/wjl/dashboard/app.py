@@ -55,6 +55,20 @@ class DashboardApp:
         # Setup callbacks
         self._setup_callbacks()
 
+    def _channel_amplitude_node_options(self):
+        """Options for channel amplitude node dropdown: Relay plus all nodes."""
+        try:
+            nodes = self.api.get_nodes()
+        except Exception:
+            nodes = []
+        options = [{"label": "Relay", "value": "relay"}]
+        for n in nodes:
+            nid = n.get("id")
+            if nid and nid != "relay":
+                label = (n.get("name") or nid or "Node").strip() or nid
+                options.append({"label": label, "value": nid})
+        return options
+
     def _setup_layout(self):
         """Setup the dashboard layout."""
         # Calculate UTC time for initial time range store
@@ -181,7 +195,27 @@ class DashboardApp:
                             "Combined signal+noise (dBm) per channel. Enable devices.local_wifi.channel_scan in config.",
                             style={"fontSize": "12px", "color": "#666", "marginBottom": "10px"},
                         ),
-                        dcc.Graph(id="channel-amplitude-graph", style={"height": "400px"}),
+                        html.Div(
+                            [
+                                html.Label("Node:", style={"marginRight": "8px", "fontWeight": "500"}),
+                                dcc.Dropdown(
+                                    id="channel-amplitude-node",
+                                    options=self._channel_amplitude_node_options(),
+                                    value="relay",
+                                    clearable=False,
+                                    style={"width": "220px", "display": "inline-block", "marginRight": "24px"},
+                                ),
+                                dcc.Checklist(
+                                    id="channel-amplitude-hide-overlap",
+                                    options=[{"label": "Hide overlapping 2.4\u2009GHz channels (2, 3, 4, 5, 7, 8, 9, 10)", "value": "hide"}],
+                                    value=[],
+                                    style={"display": "inline-block", "verticalAlign": "middle"},
+                                    inputStyle={"marginRight": "6px"},
+                                ),
+                            ],
+                            style={"marginBottom": "12px", "display": "flex", "alignItems": "center", "flexWrap": "wrap"},
+                        ),
+                        dcc.Graph(id="channel-amplitude-graph", style={"height": "800px"}),
                     ],
                     style={
                         "padding": "20px",
@@ -546,22 +580,28 @@ class DashboardApp:
 
             return fig, html.Div(events_html)
 
+        # Non-overlapping 2.4 GHz channels to show when "hide overlapping" is on
+        CHANNELS_OVERLAPPING_24GHZ = {2, 3, 4, 5, 7, 8, 9, 10}
+
         @self.app.callback(
             Output("channel-amplitude-graph", "figure"),
             [
                 Input("time-range-store", "data"),
                 Input("refresh-trigger", "data"),
+                Input("channel-amplitude-node", "value"),
+                Input("channel-amplitude-hide-overlap", "value"),
             ],
         )
-        def update_channel_amplitude_graph(time_range, refresh_trigger):
+        def update_channel_amplitude_graph(time_range, refresh_trigger, selected_node, hide_overlap):
             """Update channel amplitude graph (5-min scan, one line per channel)."""
             fig = go.Figure()
+            graph_height = 800
             if not time_range or not time_range.get("start") or not time_range.get("end"):
                 fig.add_annotation(
                     text="Select a time range",
                     xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(size=14),
                 )
-                fig.update_layout(height=400)
+                fig.update_layout(height=graph_height)
                 return fig
             start_time_str = time_range["start"]
             end_time_str = time_range["end"]
@@ -577,15 +617,22 @@ class DashboardApp:
                     end_time = end_time.replace(tzinfo=timezone.utc)
             else:
                 end_time = end_time_str
-            data = self.api.get_channel_amplitude_time_series(start_time, end_time)
+            node_id = selected_node if selected_node else "relay"
+            data = self.api.get_channel_amplitude_time_series(start_time, end_time, node_id=node_id)
             timestamps_raw = data.get("timestamps") or []
             ch_data = data.get("data") or {}
+            if hide_overlap and "hide" in hide_overlap:
+                ch_data = {
+                    k: v for k, v in ch_data.items()
+                    if k.startswith("ch") and k[2:].isdigit() and int(k[2:]) not in CHANNELS_OVERLAPPING_24GHZ
+                }
             if not timestamps_raw or not ch_data:
                 fig.add_annotation(
-                    text="No channel scan data. Enable devices.local_wifi.channel_scan in config, run as root (sudo), and wait for 5-min scans.",
+                    text="No channel scan data. Enable devices.local_wifi.channel_scan in config, run as root (sudo), and wait for 5-min scans."
+                    + (" Try another node." if node_id != "relay" else ""),
                     xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False, font=dict(size=12),
                 )
-                fig.update_layout(height=400)
+                fig.update_layout(height=graph_height)
                 return fig
             timestamps = []
             for ts_str in timestamps_raw:
@@ -623,16 +670,16 @@ class DashboardApp:
                     go.Scatter(
                         x=xs, y=ys,
                         name=ch_key,
-                        mode="lines+markers",
-                        hovertemplate=f"<b>{ch_key}</b><br>Time: %{{x}}<br>Combined: %{{y:.2f}} dBm<extra></extra>",
+                        mode="markers+lines",
+                        hovertemplate=None,
                     )
                 )
                 traces_added += 1
             fig.update_layout(
                 xaxis=dict(title="Time"),
                 yaxis=dict(title="Combined amplitude (dBm)"),
-                hovermode="x unified",
-                height=400,
+                hovermode="x",
+                height=graph_height,
                 legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01),
             )
             if traces_added == 0:

@@ -155,6 +155,7 @@ WorkingDirectory=$PROJECT_ROOT
 ExecStart=$EXEC_START
 Restart=on-failure
 RestartSec=10
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target
