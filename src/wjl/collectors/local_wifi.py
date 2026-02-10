@@ -189,14 +189,42 @@ class LocalWiFiCollector(BaseCollector):
             logger.debug("Neither tshark nor scapy available for deauth counting")
             return None, None, None, None
 
+    def _parse_signal_noise_from_tshark_fields(
+        self, parts: List[str], sig_idx: int = 0, noise_idx: int = 1
+    ) -> Tuple[Optional[float], Optional[float]]:
+        """Parse one line of tshark -T fields output for signal/noise at given column indices. Returns (signal_dbm, noise_dbm)."""
+        sig, noise = None, None
+        if len(parts) > sig_idx and parts[sig_idx].strip():
+            try:
+                s = parts[sig_idx].strip()
+                if "," in s:
+                    vals = [float(x.strip()) for x in s.split(",") if x.strip()]
+                    sig = sum(vals) / len(vals) if vals else None
+                else:
+                    sig = float(s)
+            except ValueError:
+                pass
+        if len(parts) > noise_idx and parts[noise_idx].strip():
+            try:
+                n = parts[noise_idx].strip()
+                if "," in n:
+                    vals = [float(x.strip()) for x in n.split(",") if x.strip()]
+                    noise = sum(vals) / len(vals) if vals else None
+                else:
+                    noise = float(n)
+            except ValueError:
+                pass
+        return sig, noise
+
     def _capture_signal_noise_duration(
         self, duration_sec: int
     ) -> Tuple[Optional[float], Optional[float]]:
-        """Capture on current channel for duration_sec and return (signal_dbm, noise_dbm) from radiotap. Requires tshark."""
+        """Capture on current channel for duration_sec and return (signal_dbm, noise_dbm) from radiotap or wlan_radio. Requires tshark."""
         if not shutil.which("tshark"):
             return None, None
         duration = max(1, min(duration_sec, 60))
         try:
+            # Prefer radiotap; fall back to wlan_radio (some drivers expose only one)
             cmd = [
                 "tshark",
                 "-i", self.interface,
@@ -206,6 +234,8 @@ class LocalWiFiCollector(BaseCollector):
                 "-T", "fields",
                 "-e", "radiotap.dbm_antsignal",
                 "-e", "radiotap.dbm_antnoise",
+                "-e", "wlan_radio.signal_dbm",
+                "-e", "wlan_radio.noise_dbm",
             ]
             out = subprocess.run(
                 cmd,
@@ -218,30 +248,25 @@ class LocalWiFiCollector(BaseCollector):
             if out.returncode == 0 and out.stdout:
                 for line in out.stdout.strip().splitlines():
                     parts = line.split("\t")
-                    if len(parts) >= 1 and parts[0].strip():
-                        try:
-                            sig_str = parts[0].strip()
-                            if "," in sig_str:
-                                sigs = [float(x.strip()) for x in sig_str.split(",") if x.strip()]
-                                if sigs:
-                                    signal_values.append(sum(sigs) / len(sigs))
-                            else:
-                                signal_values.append(float(sig_str))
-                        except ValueError:
-                            pass
-                    if len(parts) >= 2 and parts[1].strip():
-                        try:
-                            noise_str = parts[1].strip()
-                            if "," in noise_str:
-                                noises = [float(x.strip()) for x in noise_str.split(",") if x.strip()]
-                                if noises:
-                                    noise_values.append(sum(noises) / len(noises))
-                            else:
-                                noise_values.append(float(noise_str))
-                        except ValueError:
-                            pass
+                    # Columns 0,1 = radiotap; 2,3 = wlan_radio fallback
+                    sig, noise = self._parse_signal_noise_from_tshark_fields(parts, 0, 1)
+                    if (sig is None or noise is None) and len(parts) > 3:
+                        sig2, noise2 = self._parse_signal_noise_from_tshark_fields(parts, 2, 3)
+                        if sig is None:
+                            sig = sig2
+                        if noise is None:
+                            noise = noise2
+                    if sig is not None:
+                        signal_values.append(sig)
+                    if noise is not None:
+                        noise_values.append(noise)
             sig = round(sum(signal_values) / len(signal_values), 2) if signal_values else None
             noise = round(sum(noise_values) / len(noise_values), 2) if noise_values else None
+            if sig is None and noise is None and out.returncode == 0:
+                logger.debug(
+                    "No amplitude from tshark on %s (no radiotap/wlan_radio). Run as root with interface in monitor mode.",
+                    self.interface,
+                )
             return sig, noise
         except subprocess.TimeoutExpired:
             return None, None
@@ -267,10 +292,10 @@ class LocalWiFiCollector(BaseCollector):
         return result
 
     def _count_deauth_tshark(self) -> Tuple[Optional[int], Optional[int], Optional[float], Optional[float]]:
-        """Use tshark to count deauth/disassoc and extract radiotap signal/noise (dBm) from captured frames."""
+        """Use tshark to count deauth/disassoc and extract radiotap or wlan_radio signal/noise (dBm) from captured frames."""
         duration = max(1, min(self.monitor_capture_seconds, 120))
         try:
-            # Capture management frames; output subtype and radiotap signal/noise when present
+            # Capture management frames; output subtype, radiotap, and wlan_radio (fallback) signal/noise
             cmd = [
                 "tshark",
                 "-i", self.interface,
@@ -281,6 +306,8 @@ class LocalWiFiCollector(BaseCollector):
                 "-e", "wlan.fc.type_subtype",
                 "-e", "radiotap.dbm_antsignal",
                 "-e", "radiotap.dbm_antnoise",
+                "-e", "wlan_radio.signal_dbm",
+                "-e", "wlan_radio.noise_dbm",
             ]
             out = subprocess.run(
                 cmd,
@@ -305,31 +332,25 @@ class LocalWiFiCollector(BaseCollector):
                         deauth_count += 1
                     elif st == 10:
                         disassoc_count += 1
-                    # Radiotap signal (dBm); driver may report multiple antennas as "-70,-70,-72"
-                    if len(parts) >= 2 and parts[1].strip():
-                        try:
-                            sig_str = parts[1].strip()
-                            if "," in sig_str:
-                                sigs = [float(x.strip()) for x in sig_str.split(",") if x.strip()]
-                                if sigs:
-                                    signal_values.append(sum(sigs) / len(sigs))
-                            else:
-                                signal_values.append(float(sig_str))
-                        except ValueError:
-                            pass
-                    if len(parts) >= 3 and parts[2].strip():
-                        try:
-                            noise_str = parts[2].strip()
-                            if "," in noise_str:
-                                noises = [float(x.strip()) for x in noise_str.split(",") if x.strip()]
-                                if noises:
-                                    noise_values.append(sum(noises) / len(noises))
-                            else:
-                                noise_values.append(float(noise_str))
-                        except ValueError:
-                            pass
+                    # Radiotap at 1,2; wlan_radio fallback at 3,4
+                    sig, noise = self._parse_signal_noise_from_tshark_fields(parts, 1, 2)
+                    if (sig is None or noise is None) and len(parts) > 4:
+                        sig2, noise2 = self._parse_signal_noise_from_tshark_fields(parts, 3, 4)
+                        if sig is None:
+                            sig = sig2
+                        if noise is None:
+                            noise = noise2
+                    if sig is not None:
+                        signal_values.append(sig)
+                    if noise is not None:
+                        noise_values.append(noise)
             signal_dbm = round(sum(signal_values) / len(signal_values), 2) if signal_values else None
             noise_dbm = round(sum(noise_values) / len(noise_values), 2) if noise_values else None
+            if signal_dbm is None and noise_dbm is None and (deauth_count > 0 or disassoc_count > 0):
+                logger.debug(
+                    "No amplitude from tshark on %s (no radiotap/wlan_radio in frames). Run as root with interface in monitor mode.",
+                    self.interface,
+                )
             return deauth_count, disassoc_count, signal_dbm, noise_dbm
         except subprocess.TimeoutExpired:
             logger.warning("tshark capture timed out")

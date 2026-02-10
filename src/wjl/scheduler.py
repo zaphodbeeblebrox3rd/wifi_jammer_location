@@ -54,6 +54,44 @@ def _push_to_relay(config: Config, measurement: Dict[str, Any]) -> bool:
         return False
 
 
+def _push_channel_amplitude_to_relay(
+    config: Config, when: datetime, samples: List[Dict[str, Any]]
+) -> bool:
+    """POST channel amplitude samples to relay. Returns True on success."""
+    url = config.relay_url()
+    api_key = config.relay_api_key()
+    if not url or not api_key or not samples:
+        return False
+    try:
+        import urllib.request
+        import json
+        endpoint = url.rstrip("/") + "/api/channel_amplitude"
+        payload_list = [
+            {
+                "timestamp": when.isoformat(),
+                "channel": s["channel"],
+                "signal_dbm": s.get("signal_dbm"),
+                "noise_dbm": s.get("noise_dbm"),
+            }
+            for s in samples
+        ]
+        payload = json.dumps({"samples": payload_list}).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return 200 <= resp.status < 300
+    except Exception as e:
+        logger.warning("Push channel amplitude to relay failed: %s", e)
+        return False
+
+
 class MonitoringScheduler:
     """Continuous WiFi jamming monitoring: run capture cycles back-to-back (no interval)."""
 
@@ -167,6 +205,9 @@ class MonitoringScheduler:
                         s.get("signal_dbm"),
                         s.get("noise_dbm"),
                     )
+                if self.config.is_node() and self.config.relay_url():
+                    if _push_channel_amplitude_to_relay(self.config, when, samples):
+                        logger.info("Channel amplitude pushed to relay: %s samples", len(samples))
                 logger.info("Channel scan completed: %s samples at %s", len(samples), when.isoformat())
             except Exception as e:
                 logger.error("Channel scan failed: %s", e, exc_info=True)
